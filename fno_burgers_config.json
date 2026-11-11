@@ -1,0 +1,11 @@
+{
+  "mean": -0.009148670360445976,
+  "std": 0.7993201017379761,
+  "modes": 16,
+  "width": 32,
+  "layers": 4,
+  "n_points": 1024,
+  "nu": 0.01,
+  "target_frame": 50,
+  "target_time": 0.5
+}

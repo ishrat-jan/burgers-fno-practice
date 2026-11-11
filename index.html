@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Burgers FNO</title>
+<style>
+  body { font-family: sans-serif; max-width: 900px; margin: 20px auto; padding: 0 12px; }
+  .row { margin: 6px 0; }
+  label { display: inline-block; width: 150px; }
+  canvas { border: 1px solid #ccc; width: 100%; }
+</style>
+</head>
+<body>
+<h2>Burgers equation: FNO vs numerical solver</h2>
+<p>Set the starting wave (a sum of two sine waves). The plot shows the solution at t = 0.5.</p>
+<div id="controls"></div>
+<button id="run">Predict</button>
+<p id="status"></p>
+<canvas id="plot" width="860" height="360"></canvas>
+
+<script>
+const sliders = [
+  {id: "a1", label: "amplitude 1",  min: 0, max: 1,    step: 0.05, value: 0.8},
+  {id: "k1", label: "wavenumber 1", min: 1, max: 8,    step: 1,    value: 2},
+  {id: "p1", label: "phase 1",      min: 0, max: 6.28, step: 0.05, value: 0},
+  {id: "a2", label: "amplitude 2",  min: 0, max: 1,    step: 0.05, value: 0.4},
+  {id: "k2", label: "wavenumber 2", min: 1, max: 8,    step: 1,    value: 5},
+  {id: "p2", label: "phase 2",      min: 0, max: 6.28, step: 0.05, value: 1},
+];
+
+const box = document.getElementById("controls");
+for (const s of sliders) {
+  const row = document.createElement("div");
+  row.className = "row";
+  row.innerHTML = `<label>${s.label}</label>
+    <input type="range" id="${s.id}" min="${s.min}" max="${s.max}" step="${s.step}" value="${s.value}">
+    <span id="${s.id}_v">${s.value}</span>`;
+  box.appendChild(row);
+  const input = row.querySelector("input");
+  input.addEventListener("input", e => {
+    document.getElementById(s.id + "_v").textContent = e.target.value;
+  });
+  input.addEventListener("change", run);
+}
+document.getElementById("run").addEventListener("click", run);
+
+function val(id) { return parseFloat(document.getElementById(id).value); }
+
+async function run() {
+  const status = document.getElementById("status");
+  const body = {
+    components: [
+      {amplitude: val("a1"), wavenumber: Math.round(val("k1")), phase: val("p1")},
+      {amplitude: val("a2"), wavenumber: Math.round(val("k2")), phase: val("p2")},
+    ],
+  };
+  status.textContent = "running...";
+  try {
+    const r = await fetch("/predict", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      status.textContent = "error " + r.status + ": " + await r.text();
+      return;
+    }
+    const d = await r.json();
+    draw(d.x, d.u0, d.u_true, d.u_pred);
+    const err = d.rel_error === null ? "n/a" : (100 * d.rel_error).toFixed(2) + "%";
+    status.textContent = "FNO vs solver relative error: " + err +
+      " | FNO " + d.fno_ms.toFixed(1) + " ms, solver " + d.solver_ms.toFixed(1) + " ms" +
+      " | mean drift " + d.mean_drift.toExponential(1);
+  } catch (e) {
+    status.textContent = "request failed: " + e;
+  }
+}
+
+function draw(x, a, t, p) {
+  const c = document.getElementById("plot");
+  const g = c.getContext("2d");
+  const W = c.width, H = c.height, pad = 40;
+  g.clearRect(0, 0, W, H);
+
+  const all = a.concat(t, p);
+  let lo = Math.min(...all), hi = Math.max(...all);
+  if (hi - lo < 1e-6) { lo -= 0.5; hi += 0.5; }
+  const sx = i => pad + (W - 2 * pad) * i / (x.length - 1);
+  const sy = v => H - pad - (H - 2 * pad) * (v - lo) / (hi - lo);
+
+  g.strokeStyle = "#999";
+  g.strokeRect(pad, pad, W - 2 * pad, H - 2 * pad);
+  g.fillStyle = "#333";
+  g.font = "12px sans-serif";
+  g.fillText(hi.toFixed(2), 2, pad + 4);
+  g.fillText(lo.toFixed(2), 2, H - pad);
+  g.fillText("x = 0", pad, H - pad + 16);
+  g.fillText("x = 1", W - pad - 30, H - pad + 16);
+
+  function line(vals, color, dashed) {
+    g.strokeStyle = color;
+    g.lineWidth = 2;
+    g.setLineDash(dashed ? [6, 4] : []);
+    g.beginPath();
+    vals.forEach((v, i) => i === 0 ? g.moveTo(sx(i), sy(v)) : g.lineTo(sx(i), sy(v)));
+    g.stroke();
+    g.setLineDash([]);
+  }
+  line(a, "#1f77b4", false);
+  line(t, "#2ca02c", false);
+  line(p, "#ff7f0e", true);
+
+  g.fillStyle = "#1f77b4"; g.fillText("input (t = 0)", pad + 10, pad + 16);
+  g.fillStyle = "#2ca02c"; g.fillText("numerical solver (t = 0.5)", pad + 110, pad + 16);
+  g.fillStyle = "#ff7f0e"; g.fillText("FNO (t = 0.5, dashed)", pad + 290, pad + 16);
+}
+
+run();
+</script>
+</body>
+</html>
